@@ -79,21 +79,32 @@ def scan_folder_for_projects(src_path):
 		projects[project_name] = ret
 	return projects
 
+def find_workspace():
+	current = os.path.abspath(".")
+	while True:
+		if os.path.exists(current + "/.flep_workspace"):
+			return current
+
+		next = os.path.dirname(current)
+		if next == current:
+			break
+		current = next
+	return None
+
 print("")
 print(" ***** FLEP")
 
-workspace_path = os.path.dirname(os.path.realpath(__file__))
-print(" *** Workspace: {}" .format(workspace_path))
-
 if len(sys.argv) == 2 and sys.argv[1] == "init":
-	open(workspace_path + "/.flep_workspace", 'a').close()
+	open("./.flep_workspace", 'a').close()
 	print(" *** Done!")
 	print("")
 	exit(0)
 
-if not os.path.exists(workspace_path + "/.flep_workspace"):
-	print(" *** ERROR. {} is not a workspace! Run 'flep init' first!".format(workspace_path))
+workspace_path = find_workspace()
+if not workspace_path:
+	print(" *** ERROR. No workspace found! Run 'flep init' first!".format(workspace_path))
 	exit(-1)
+print(" *** Using workspace: {}" .format(workspace_path))
 
 workspace_name = os.path.basename(workspace_path)
 src_path = workspace_path + "/src";
