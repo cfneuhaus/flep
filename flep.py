@@ -1,0 +1,199 @@
+#!/bin/python
+
+import os
+import networkx as nx
+import sys
+
+def draw_graph(G):
+	import matplotlib.pyplot as plt
+	plt.subplot(111)
+	nx.draw(G, with_labels=True, font_weight='bold')
+	plt.show()
+
+def read_package_xml(filename):
+	from xml.dom import minidom
+	try:
+		print(filename)
+		with open(filename) as f:
+			xmldoc = minidom.parse(f)
+			itemlist = xmldoc.getElementsByTagName('build_depend')
+			ret = {}
+			ret["name"] = filename
+			ret["deps"] = [s.firstChild.data for s in itemlist]
+			return ret
+	except:
+		return None
+
+def read_package_txt(filename):
+	try:
+		deps = []
+		for line in open(filename):
+			li=line.strip()
+			if not li.startswith("#") and not li.startswith("%"):
+				dep_line = li.rstrip()
+				parts = dep_line.split(" ")
+				dep = {}
+				ok = False
+				if len(parts)>=1:
+					dep["name"] = parts[0]
+					ok = True
+				if len(parts)>=2:
+					dep["git_url"] = parts[1]
+				if len(parts)>=3:
+					dep["git_branch"] = parts[2]
+				if ok:
+					deps.append(dep)
+
+		ret = {}
+		ret["name"] = filename
+		ret["deps"] = deps
+		return ret
+	except:
+		return None
+
+def scan_folder_for_projects(src_path):
+	project_dirs = [os.path.join(src_path, o) for o in os.listdir(src_path) 
+                    if os.path.isdir(os.path.join(src_path, o))]
+
+	projects = {}
+	for project_dir in project_dirs:
+		#print(project_dir)
+		project_name = os.path.basename(project_dir)
+		#print(project_name)
+
+		if not os.path.isfile(project_dir + "/CMakeLists.txt"):
+			print("Ignoring {}".format(project_name))
+			continue
+
+		ret = read_package_txt(project_dir + "/dependencies.txt")
+		#ret = read_package_xml(project_dir + "/package.xml")
+
+		if ret is None:
+			#print("Ignoring {}".format(project_name))
+			#continue
+			ret={}
+			ret["deps"] = []
+		ret["path"] = project_dir
+		dep_names = [dep["name"] for dep in ret["deps"]]
+		print(" * {} has deps {}".format(project_name, str(dep_names)))
+		projects[project_name] = ret
+	return projects
+
+print("")
+print(" ***** FLEP")
+
+workspace_path = os.path.dirname(os.path.realpath(__file__))
+print(" *** Workspace: {}" .format(workspace_path))
+
+if len(sys.argv) == 2 and sys.argv[1] == "init":
+	open(workspace_path + "/.flep_workspace", 'a').close()
+	print(" *** Done!")
+	print("")
+	exit(0)
+
+if not os.path.exists(workspace_path + "/.flep_workspace"):
+	print(" *** ERROR. {} is not a workspace! Run 'flep init' first!".format(workspace_path))
+	exit(-1)
+
+workspace_name = os.path.basename(workspace_path)
+src_path = workspace_path + "/src";
+print(" *** Scanning {} for projects".format(src_path))
+projects = scan_folder_for_projects(src_path)
+
+print("")
+
+if len(sys.argv) == 2 and sys.argv[1] == "get_deps":
+	# TODO: Rekursiv machen
+	print(" *** Trying to obtain dependencies...")
+	state = 0
+	error = False
+	for project_name, project in projects.items():
+		print(" * Scanning project {}".format(project_name))
+		for dep in project["deps"]:
+			if dep["name"] not in projects:
+				if "git_url" in dep:
+					print(" ** Performing git clone for {}".format(dep["git_url"]))
+					from git import Repo
+					Repo.clone_from(dep["git_url"], src_path + "/" + dep["name"])
+					state = 1
+				else:
+					print(" ** WARNING. Unsatisfied dependencies for project {}: {} not found and no git url specified!".format(project_name, dep["name"]))
+					error = True
+	if state == 1:
+		print(" *** Done!")
+	else:
+		print(" *** Nothing to do!")
+	print("")
+	exit(0)
+
+print(" *** Generating CMakeLists.txt...")
+
+disabled_new = True
+# Rekursiv!
+while disabled_new:
+	disabled_new = False
+	disabled_projects = set([])
+	for project_name, project in projects.items():
+		for dep in project["deps"]:
+			if dep["name"] not in projects:
+				print(" * WARNING. Unsatisfied dependencies for project {}: {} not found. Disabling project!".format(project_name, dep["name"]))
+				disabled_projects.add(project_name)
+				disabled_new = True
+
+	for project_name in disabled_projects:
+		del projects[project_name]
+
+G = nx.DiGraph()
+for project_name, project in projects.items():
+	G.add_node(project_name)
+for project_name, project in projects.items():
+	for dep in project["deps"]:
+		G.add_edge(dep["name"], project_name)
+
+#print(list(nx.simple_cycles(G))) # Cycles
+topo = list(nx.topological_sort(G))
+
+print(" * Determined build order: {}".format(str(topo)))
+
+cmake_inject = """
+function(get_lib_targets_in_dir DIRS TARGETS_IN_DIR)
+  set(TARGETS_IN_DIR_ "")  
+  foreach(_dir ${DIRS})
+      get_property(_targets_list DIRECTORY "${_dir}" PROPERTY BUILDSYSTEM_TARGETS)
+
+      foreach(_target ${_targets_list})
+        get_property(_target_type TARGET ${_target} PROPERTY TYPE)
+    
+        if (${_target_type} MATCHES "_LIBRARY$")
+            list(APPEND TARGETS_IN_DIR_ "${_target}")
+        endif()
+      endforeach()
+  endforeach()
+  set(TARGETS_IN_DIR "${TARGETS_IN_DIR_}" PARENT_SCOPE)
+endfunction()
+"""
+
+with open(workspace_path + "/CMakeLists.txt","w") as out_file:
+	out_file.write("cmake_minimum_required(VERSION 3.1)\n") 
+	out_file.write("# AUTOMATICALLY GENERATED FILE BY FLEP. DO NOT MODIFY!\n\n") 
+	out_file.write("project({})\n".format(workspace_name))
+	out_file.write(cmake_inject)
+	out_file.write("set(FLEP_ACTIVE TRUE)\n")
+	out_file.write("\n")
+	for package_name in topo:
+		out_file.write("set(FLEP_PACKAGE_NAME \"{}\")\n".format(package_name))
+		all_dep_dirs = []
+		for dep in projects[package_name]["deps"]:
+			all_dep_dirs.append(os.path.relpath(projects[dep["name"]]["path"], workspace_path))
+		if len(all_dep_dirs) > 0:
+			out_file.write("get_lib_targets_in_dir(\"{}\" , TARGETS_IN_DIR)\n".format(";".join(all_dep_dirs)))
+			out_file.write("set(FLEP_PACKAGE_DEPS \"${TARGETS_IN_DIR}\")\n")
+		else:
+			out_file.write("set(FLEP_PACKAGE_DEPS \"\")\n")
+		out_file.write("add_subdirectory({})\n".format(os.path.relpath(projects[package_name]["path"], workspace_path)))
+
+print(" *** Done!")
+
+# draw_graph(G)
+print("")
+exit(0)
