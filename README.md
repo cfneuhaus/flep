@@ -5,6 +5,5 @@ flep -- a tool for managing interdependent libraries in a flat hierarchy
 
 ```
 git clone https://github.com/cfneuhaus/flep.git
-cd flep
-pip install --user .
+pip install --user flep
 ```
