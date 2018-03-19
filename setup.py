@@ -3,6 +3,6 @@ setup(name='flep',
       version='1.0',
       author='Frank Neuhaus',
       author_email='dtag00@gmail.com',
-      install_requires=['matplotlib', 'networkx'],
+      install_requires=['matplotlib', 'networkx', 'gitpython'],
       scripts=['bin/flep']
       )
