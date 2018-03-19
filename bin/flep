@@ -207,6 +207,49 @@ with open(workspace_path + "/CMakeLists.txt","w") as out_file:
 
 print(" *** Done!")
 
+
+def run_cmake(args):
+	import subprocess
+	try:
+		out = subprocess.check_output(['cmake', '--version'])
+	except OSError:
+		raise RuntimeError("CMake must be installed!")
+
+	if not os.path.exists(workspace_path + "/build"):
+		os.makedirs(workspace_path + "/build")
+
+	subprocess.check_call(['cmake', workspace_path] + args,
+							cwd=workspace_path+"/build")
+
+def run_make(args):
+	import subprocess
+
+	if not os.path.exists(workspace_path + "/build/Makefile"):
+		print(" *** ERROR. Run 'flep cmake' first!")
+		print("")
+		exit(-1)
+
+	subprocess.check_call(['make'] + args,
+							cwd=workspace_path+"/build")
+
+if len(sys.argv) >= 2 and sys.argv[1] == "cmake":
+	print(" *** Running cmake...")
+
+	run_cmake(sys.argv[2:]);
+
+	print(" *** Done!")
+	print("")
+	exit(0)
+
+if len(sys.argv) >= 2 and sys.argv[1] == "make":
+	print(" *** Running make...")
+
+	run_make(sys.argv[2:])
+
+	print(" *** Done!")
+	print("")
+	exit(0)
+
 # draw_graph(G)
 print("")
 exit(0)
