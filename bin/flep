@@ -111,34 +111,34 @@ print(" *** Using workspace: {}" .format(workspace_path))
 workspace_name = os.path.basename(workspace_path)
 src_path = workspace_path + "/src";
 build_path = workspace_path + "/build";
-print(" *** Scanning {} for projects".format(src_path))
-projects = scan_folder_for_projects(src_path)
-
 print("")
 
 if len(sys.argv) == 2 and sys.argv[1] == "get_deps":
-	# TODO: Rekursiv machen
 	print(" *** Trying to obtain dependencies...")
-	state = 0
-	error = False
-	for project_name, project in projects.items():
-		print(" * Scanning project {}".format(project_name))
-		for dep in project["deps"]:
-			if dep["name"] not in projects:
-				if "git_url" in dep:
-					print(" ** Performing git clone for {}".format(dep["git_url"]))
-					from git import Repo
-					Repo.clone_from(dep["git_url"], src_path + "/" + dep["name"])
-					state = 1
-				else:
-					print(" ** WARNING. Unsatisfied dependencies for project {}: {} not found and no git url specified!".format(project_name, dep["name"]))
-					error = True
-	if state == 1:
-		print(" *** Done!")
-	else:
-		print(" *** Nothing to do!")
+	state = 1
+	while state == 1:
+		print(" *** Scanning {} for projects".format(src_path))
+		projects = scan_folder_for_projects(src_path)
+		state = 0
+		error = False
+		for project_name, project in projects.items():
+			print(" * Scanning project {}".format(project_name))
+			for dep in project["deps"]:
+				if dep["name"] not in projects:
+					if "git_url" in dep:
+						print(" ** Performing git clone for {}".format(dep["git_url"]))
+						from git import Repo
+						Repo.clone_from(dep["git_url"], src_path + "/" + dep["name"])
+						state = 1
+					else:
+						print(" ** WARNING. Unsatisfied dependencies for project {}: {} not found and no git url specified!".format(project_name, dep["name"]))
+						error = True
+	print(" *** Done!")
 	print("")
 	exit(0)
+
+print(" *** Scanning {} for projects".format(src_path))
+projects = scan_folder_for_projects(src_path)
 
 print(" *** Generating CMakeLists.txt...")
 
